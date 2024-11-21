@@ -1,30 +1,49 @@
 import socket
 import os
+import cv2
+import struct
 
 HOST = "127.0.0.1"
 MAINPORT = 50007
 
-def ConnectUnity():
-    # TCP用のソケットを作成
-    client = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+# ソケットを作成
+client = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 
-    # テストのため自身のpidを表示
-    result = str(os.getpid())
-    print(result)
-   
-    # クライアントに接続
+try:
+    # サーバーに接続
     client.connect((HOST, MAINPORT))
-   
-    # 接続できればpidをUTF-8でエンコードした文字列を送る(バイト列にする)
-    client.send(result.encode('utf-8'))
+    print("Connected to the server")
 
-    # 受け取るデータの大きさは200でデータ受け取り待ち
-    data = client.recv(200)
-   
-    # 受け取ったデータを表示
-    print(data.decode('utf-8'))
-   
-    # 以降はclientを通してsendメソッドでデータを送れる
-    return client
+    # カメラを初期化
+    cap = cv2.VideoCapture(0)
+    if not cap.isOpened():
+        raise IOError("Cannot open camera")
 
-ConnectUnity()
+    while True:
+        ret, frame = cap.read()
+        if not ret:
+            print("Failed to capture frame")
+            break
+
+        # フレームを PNG にエンコード
+        _, buffer = cv2.imencode('.png', frame)
+
+        # データサイズを取得して送信
+        data_size = len(buffer)
+        client.sendall(struct.pack('!I', data_size))  # サイズを送信
+        client.sendall(buffer)  # フレームデータを送信
+
+        print(f"Sent frame of size {data_size} bytes")
+
+except KeyboardInterrupt:
+    print("Transmission stopped by user")
+
+except Exception as e:
+    print(f"An error occurred: {e}")
+
+finally:
+    # リソースを解放
+    if 'cap' in locals() and cap.isOpened():
+        cap.release()
+    client.close()
+    print("Connection closed")
